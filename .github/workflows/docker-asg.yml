@@ -1,47 +1,69 @@
-# 워크 플로우(작업) 이름
+# ############################################################
+# GitHub Actions 워크플로
+# main 에 push 되면 GitHub 가 우분투 VM 을 빌려 이 파일을 실행함
+#
+# 전체 흐름 (이 수업에서 제일 중요)
+#   1) 리포 코드 checkout
+#   2) Docker Hub / AWS 로그인
+#   3) docker-compose.yaml 을 S3 에 업로드 (EC2 가 나중에 받음)
+#   4) nginx 이미지 빌드 → ECR 에 push
+#   5) SSM send-command 로 ASG 인스턴스에 compose 배포
+# ############################################################
 name: GitOps Docker CICD Pipeline
-# 1. 트리거 설정: 브렌치 정의
+
+# on = 언제 돌릴지. branches: main 만. 다른 브랜치 push 는 무시
 on:
   push:
     branches:
       - main
 
 jobs:
+  # Actions 화면에 보이는 job 이름
   build-and-update:
+    # 실행 장소. 우리 프라이빗 EC2 가 아니라 GitHub 호스티드 러너
     runs-on: ubuntu-latest
 
     steps:
+      # 이 리포 파일을 VM 작업 폴더로 가져옴. 없으면 docker build 할 Dockerfile 이 없음
       - name: 소스코드 전송
         uses: actions/checkout@v4
 
+      # Docker Hub 로그인. 시크릿은 리포 Settings → Secrets and variables → Actions
+      # 값은 웹에서 다시 안 보임. 로그에도 *** 로 가려짐
       - name: login to docker hub
         uses: docker/login-action@v3
         with:
-          username: ${{secrets.DOCKER_USERNAME}}
-          password: ${{secrets.DOCKER_PASSWORD}}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-
+      # 이후 aws s3 / ecr / ssm 명령이 이 계정으로 동작
+      # aws-region 비면: Input required and not supplied: aws-region
       - name: AWS 자격증명 설정
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{secrets.AWS_ACCESS_KEY_ID}}
-          aws-secret-access-key: ${{secrets.AWS_SECRET_ACCESS_KEY}}
-          aws-region: ${{secrets.AWS_REGION}}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
+      # ASG 인스턴스에는 git 이 없음. compose 파일을 S3 에 두고 EC2 가 aws s3 cp 로 가져감
       - name: S3 정적 웹사이트로 배포
         run: |
-          aws s3 cp ./docker-compose.yaml s3://${{secrets.S3_BUCKET_NAME}}/docker-compose.yaml
+          aws s3 cp ./docker-compose.yaml s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml
 
-      # ecr에 docker 이미지 빌드 및 푸시
+      # ECR 로그인. 없으면 docker push 401
+      # id: login-ecr → 아래 주석의 steps.login-ecr.outputs.registry 에서 레지스트리 URL 꺼낼 때 사용
       - name: login to amazon ecr
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        
+
+      # ./nginx = Dockerfile + html 이 있는 폴더. 루트에 Dockerfile 만 있으면 에러
+      # 태그 2개: 버전 고정(1.31.3-ecr) + latest (compose 가 latest 를 pull)
+      # --no-cache = 캐시 안 쓰고 매번 새로 빌드
       - name: build and push docker image to ecr
         # env:
-          # ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          # ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          # IMAGE_TAG: ${{ github.sha }}
+        #   ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        #   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+        #   IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build --no-cache -t 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:1.31.3-ecr ./nginx
           docker build --no-cache -t 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest ./nginx
@@ -49,19 +71,22 @@ jobs:
           docker push 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:1.31.3-ecr
           docker push 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest
 
+      # send-command = SSH 대신 SSM 으로 셸 명령을 인스턴스에 보냄
+      # --targets tag:Cicd=asg → 그 태그가 붙은 ASG 인스턴스 전부 (ID 하나보다 스케일 아웃에 맞음)
+      # || true = 컨테이너가 없어도 stop/rm 실패로 job 을 안 죽임
+      # 여기 job 성공 = "명령 전송 성공". 인스턴스에서 진짜 됐는지는 SSM → Run Command 에서 확인
       - name: 컨테이너 배포 및 s3 파일 싱크
         run: |
-          # aws s3 sync 명령어로 파일 업로드
           aws ssm send-command \
-            --instance-ids ${{secrets.EC2_INSTANCE_ID}} \
             --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:Cicd,Value=asg" \
             --parameters 'commands=[
             "aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 925047940866.dkr.ecr.eu-central-1.amazonaws.com",
             "docker stop nginx-container || true",
-            "docker rm nginx-container || true", 
-            "sudo aws s3 cp s3://${{secrets.S3_BUCKET_NAME}}/docker-compose.yaml /docker-compose.yaml",
+            "docker rm nginx-container || true",
+            "sudo aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml /docker-compose.yaml",
             "docker compose pull",
             "docker compose up -d --remove-orphans",
             "docker image prune -f"]' \
-            --region ${{secrets.AWS_REGION}} \
+            --region ${{ secrets.AWS_REGION }} \
             --comment "Deploying SSM"
