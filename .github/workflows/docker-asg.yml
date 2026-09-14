@@ -45,19 +45,20 @@ jobs:
           docker push 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:1.31.3-ecr
           docker push 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest
 
-      # - name: 컨테이너 배포 및 s3 파일 싱크
-      #   run: |
-      #     # aws s3 sync 명령어로 파일 업로드
-      #     aws s3 sync html/ s3://${{secrets.S3_BUCKET_NAME}}/ --delete # --acl public-read
+      - name: 컨테이너 배포 및 s3 파일 싱크
+        run: |
+          # aws s3 sync 명령어로 파일 업로드
+          aws s3 sync html/ s3://${{secrets.S3_BUCKET_NAME}}/ --delete # --acl public-read
 
-      #     aws ssm send-command \
-      #       --instance-ids ${{secrets.EC2_INSTANCE_ID}} \
-      #       --document-name "AWS-RunShellScript" \
-      #       --parameters 'commands=[
-      #       "docker pull haegihaegi/nginx:1.31.3-cd",
-      #       "docker stop nginx-container || true",
-      #       "docker rm nginx-container || true",
-      #       "docker run -d --name nginx-container -p 80:80 haegihaegi/nginx:1.31.3-cd",
-      #       "sudo aws s3 sync s3://${{secrets.S3_BUCKET_NAME}}/ /usr/share/nginx/html --delete"]' \
-      #       --region ${{secrets.AWS_REGION}} \
-      #       --comment "Deploying SSM"
+          aws ssm send-command \
+            --instance-ids ${{secrets.EC2_INSTANCE_ID}} \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+            "aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 925047940866.dkr.ecr.eu-central-1.amazonaws.com",            "docker pull haegihaegi/nginx:1.31.3-cd",
+            "docker pull 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest",
+            "docker stop nginx-container || true",
+            "docker rm nginx-container || true",
+            "docker run -d --name nginx-container -p 80:80 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest",
+            "sudo aws s3 sync s3://${{secrets.S3_BUCKET_NAME}}/ /usr/share/nginx/html --delete"]' \
+            --region ${{secrets.AWS_REGION}} \
+            --comment "Deploying SSM"
