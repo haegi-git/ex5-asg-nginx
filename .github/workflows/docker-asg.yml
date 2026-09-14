@@ -48,7 +48,7 @@ jobs:
       - name: 컨테이너 배포 및 s3 파일 싱크
         run: |
           # aws s3 sync 명령어로 파일 업로드
-          aws s3 sync html/ s3://${{secrets.S3_BUCKET_NAME}}/ --delete # --acl public-read
+          aws s3 sync nginx/html/ s3://${{secrets.S3_BUCKET_NAME}}/ --delete # --acl public-read
 
           aws ssm send-command \
             --instance-ids ${{secrets.EC2_INSTANCE_ID}} \
