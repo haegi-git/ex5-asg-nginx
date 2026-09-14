@@ -28,6 +28,10 @@ jobs:
           aws-secret-access-key: ${{secrets.AWS_SECRET_ACCESS_KEY}}
           aws-region: ${{secrets.AWS_REGION}}
 
+      - name: S3 정적 웹사이트로 배포
+        run: |
+          aws s3 cp ./docker-compose.yaml s3://${{secrets.S3_BUCKET_NAME}}/docker-compose.yaml
+
       # ecr에 docker 이미지 빌드 및 푸시
       - name: login to amazon ecr
         id: login-ecr
@@ -48,17 +52,16 @@ jobs:
       - name: 컨테이너 배포 및 s3 파일 싱크
         run: |
           # aws s3 sync 명령어로 파일 업로드
-          aws s3 sync nginx/html/ s3://${{secrets.S3_BUCKET_NAME}}/ --delete # --acl public-read
-
           aws ssm send-command \
             --instance-ids ${{secrets.EC2_INSTANCE_ID}} \
             --document-name "AWS-RunShellScript" \
             --parameters 'commands=[
-            "aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 925047940866.dkr.ecr.eu-central-1.amazonaws.com",            "docker pull haegihaegi/nginx:1.31.3-cd",
-            "docker pull 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest",
+            "aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 925047940866.dkr.ecr.eu-central-1.amazonaws.com",
             "docker stop nginx-container || true",
-            "docker rm nginx-container || true",
-            "docker run -d --name nginx-container -p 80:80 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest",
-            "sudo aws s3 sync s3://${{secrets.S3_BUCKET_NAME}}/ /usr/share/nginx/html --delete"]' \
+            "docker rm nginx-container || true", 
+            "sudo aws s3 cp s3://${{secrets.S3_BUCKET_NAME}}/docker-compose.yaml /docker-compose.yaml",
+            "docker compose pull",
+            "docker compose up -d --remove-orphans",
+            "docker image prune -f"]' \
             --region ${{secrets.AWS_REGION}} \
             --comment "Deploying SSM"
