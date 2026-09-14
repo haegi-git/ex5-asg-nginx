@@ -79,7 +79,7 @@ jobs:
         run: |
           aws ssm send-command \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=tag:Cicd,Value=asg" \
+            --targets "Key=tag:Cicd,Values=asg" \
             --parameters 'commands=[
             "aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 925047940866.dkr.ecr.eu-central-1.amazonaws.com",
             "docker stop nginx-container || true",
