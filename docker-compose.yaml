@@ -19,3 +19,17 @@ services:
 networks:
   public-subnet:
     driver: bridge
+
+services:
+  fastapi:
+    image: 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/fastapi:latest
+    container_name: fastapi-container
+    ports:
+      - "8000:8000"
+    volumes:
+      - /home/ec2-user/fastapi:/app
+    restart: always
+    networks:
+      public-subnet:
+        aliases:
+          - fastapi

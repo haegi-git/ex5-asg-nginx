@@ -67,9 +67,13 @@ jobs:
         #   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
         #   IMAGE_TAG: ${{ github.sha }}
         run: |
+          docker build --no-cache -t 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/fastapi:3.9-ecr ./fastapi
+          docker build --no-cache -t 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/fastapi:latest ./fastapi
           docker build --no-cache -t 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:1.31.3-ecr ./nginx
           docker build --no-cache -t 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest ./nginx
 
+          docker push 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/fastapi:3.9-ecr
+          docker push 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/fastapi:latest
           docker push 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:1.31.3-ecr
           docker push 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest
 
@@ -85,11 +89,14 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Cicd,Values=asg" \
             --parameters 'commands=[
-            "sudo mkdir -p /home/ec2-user/nginx/html /home/ec2-user/nginx/logs /home/ec2-user/app",
+            "sudo mkdir -p /home/ec2-user/nginx/html /home/ec2-user/nginx/logs /home/ec2-user/app /home/ec2-user/fastapi",
             "sudo aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/nginx/html/ /home/ec2-user/nginx/html/",
+            "sudo aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/fastapi/ /home/ec2-user/fastapi/",
             "aws ecr get-login-password --region eu-central-1 | sudo docker login --username AWS --password-stdin 925047940866.dkr.ecr.eu-central-1.amazonaws.com",
             "sudo docker stop nginx-container || true",
             "sudo docker rm nginx-container || true",
+            "sudo docker stop fastapi-container || true",
+            "sudo docker rm fastapi-container || true",
             "sudo aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml /home/ec2-user/app/docker-compose.yaml",
             "sudo docker compose -p nginx -f /home/ec2-user/app/docker-compose.yaml pull",
             "sudo docker compose -p nginx -f /home/ec2-user/app/docker-compose.yaml up -d --remove-orphans",

@@ -1,0 +1,41 @@
+# ex5 ASG + GitHub Actions — 이 시간에 기억할 것
+
+## 1. compose 파일 위치 (선생님이 강조)
+- docker compose 는 "지금 있는 폴더 이름"을 프로젝트 이름(네임스페이스)으로 씀
+- /docker-compose.yaml 처럼 루트(/)에 두면 폴더 이름이 비어서
+  project name must not be empty → up 이 실행 안 됨
+- 정석: /home/ec2-user/ 에 두고 cd /home/ec2-user 한 다음
+  docker compose pull / up
+  (선생님 user-data 그대로)
+
+## 2. 전체 흐름 (한 줄)
+push → Actions가 이미지 ECR 올림 + compose/html 을 S3 올림
+     → SSM 이 태그 Cicd=asg 인스턴스에 명령
+     → EC2 가 compose pull/up → ALB:80 으로 웹
+
+ASG 만 만든다고 도커가 자동 pull 되지 않음.
+
+## 3. SSM 타겟 태그
+- 워크플로: --targets Key=tag:Cicd,Values=asg   (Value 단수 아님, Values)
+- 태그는 ASG 가 아니라 EC2 인스턴스에 붙어 있어야 함 (propagate)
+- Actions 초록 = 명령 "전송" 성공. 실제 up 은 SSM Run Command Output
+
+## 4. 볼륨
+- compose volumes 가 호스트 경로면
+  /home/ec2-user/nginx/html 폴더가 있어야 하고
+  html 은 S3 sync 로 채워져야 함 (이미지 안 HTML 은 마운트하면 가려짐)
+
+## 5. 네트워크
+- 서비스 안 networks + 맨 아래 networks: 로 나눔
+- aliases 쓰려면 리스트(- 이름)가 아니라 맵 문법
+
+## 6. ALB 안 될 때
+- 타임아웃: ALB 앞 (https 로 연 경우 / ALB SG / internal)
+- 502 + 타겟 비정상: 인스턴스 80 에 nginx 없음
+  → docker ps, curl 127.0.0.1 로 확인
+- localhost 200 인데 비정상 → EC2 SG 가 ALB 의 80 헬스체크를 막음
+
+## 7. 시작 템플릿 user-data
+- 새로 뜨는 대만 실행. 이미 있는 EC2 는 안 바뀜 → 교체해야 함
+- docker + compose 설치는 여기(또는 AMI)
+- compose 경로는 SSM 이랑 같은 디렉터리로 맞출 것
