@@ -51,6 +51,7 @@ jobs:
         run: |
           aws s3 cp ./docker-compose.yaml s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml
           aws s3 sync ./nginx/html/ s3://${{ secrets.S3_BUCKET_NAME }}/nginx/html/
+          aws s3 sync ./fastapi/ s3://${{ secrets.S3_BUCKET_NAME }}/fastapi/
 
       # ECR 로그인. 없으면 docker push 401
       # id: login-ecr → 아래 주석의 steps.login-ecr.outputs.registry 에서 레지스트리 URL 꺼낼 때 사용
