@@ -5,7 +5,7 @@
 # 전체 흐름 (이 수업에서 제일 중요)
 #   1) 리포 코드 checkout
 #   2) Docker Hub / AWS 로그인
-#   3) docker-compose.yaml 을 S3 에 업로드 (EC2 가 나중에 받음)
+#   3) compose + html 을 S3 에 업로드 (EC2 가 나중에 받음)
 #   4) nginx 이미지 빌드 → ECR 에 push
 #   5) SSM send-command 로 ASG 인스턴스에 compose 배포
 # ############################################################
@@ -45,10 +45,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # ASG 인스턴스에는 git 이 없음. compose 파일을 S3 에 두고 EC2 가 aws s3 cp 로 가져감
+      # ASG 인스턴스에는 git 이 없음. compose/html 을 S3 에 두고 EC2 가 받아 감
+      # html 은 compose 가 호스트 경로로 마운트하므로 버킷에도 같이 올려야 함
       - name: S3 정적 웹사이트로 배포
         run: |
           aws s3 cp ./docker-compose.yaml s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml
+          aws s3 sync ./nginx/html/ s3://${{ secrets.S3_BUCKET_NAME }}/nginx/html/
 
       # ECR 로그인. 없으면 docker push 401
       # id: login-ecr → 아래 주석의 steps.login-ecr.outputs.registry 에서 레지스트리 URL 꺼낼 때 사용
@@ -81,12 +83,14 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Cicd,Values=asg" \
             --parameters 'commands=[
-            "aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 925047940866.dkr.ecr.eu-central-1.amazonaws.com",
-            "docker stop nginx-container || true",
-            "docker rm nginx-container || true",
+            "sudo mkdir -p /home/ec2-user/nginx/html /home/ec2-user/nginx/logs",
+            "sudo aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/nginx/html/ /home/ec2-user/nginx/html/",
+            "aws ecr get-login-password --region eu-central-1 | sudo docker login --username AWS --password-stdin 925047940866.dkr.ecr.eu-central-1.amazonaws.com",
+            "sudo docker stop nginx-container || true",
+            "sudo docker rm nginx-container || true",
             "sudo aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml /docker-compose.yaml",
-            "docker compose pull",
-            "docker compose up -d --remove-orphans",
-            "docker image prune -f"]' \
+            "sudo docker compose -f /docker-compose.yaml pull",
+            "sudo docker compose -f /docker-compose.yaml up -d --remove-orphans",
+            "sudo docker image prune -f"]' \
             --region ${{ secrets.AWS_REGION }} \
             --comment "Deploying SSM"
