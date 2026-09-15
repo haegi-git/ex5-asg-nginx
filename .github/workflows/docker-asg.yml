@@ -74,6 +74,8 @@ jobs:
           docker push 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest
 
       # send-command = SSH 대신 SSM 으로 셸 명령을 인스턴스에 보냄
+      # compose 를 / 에 두면 프로젝트 이름이 빈 문자열 → project name must not be empty
+      # 그래서 /home/ec2-user/app/ 에 두고 -p nginx 로 이름을 고정
       # --targets tag:Cicd=asg → 그 태그가 붙은 ASG 인스턴스 전부 (ID 하나보다 스케일 아웃에 맞음)
       # || true = 컨테이너가 없어도 stop/rm 실패로 job 을 안 죽임
       # 여기 job 성공 = "명령 전송 성공". 인스턴스에서 진짜 됐는지는 SSM → Run Command 에서 확인
@@ -83,14 +85,14 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Cicd,Values=asg" \
             --parameters 'commands=[
-            "sudo mkdir -p /home/ec2-user/nginx/html /home/ec2-user/nginx/logs",
+            "sudo mkdir -p /home/ec2-user/nginx/html /home/ec2-user/nginx/logs /home/ec2-user/app",
             "sudo aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/nginx/html/ /home/ec2-user/nginx/html/",
             "aws ecr get-login-password --region eu-central-1 | sudo docker login --username AWS --password-stdin 925047940866.dkr.ecr.eu-central-1.amazonaws.com",
             "sudo docker stop nginx-container || true",
             "sudo docker rm nginx-container || true",
-            "sudo aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml /docker-compose.yaml",
-            "sudo docker compose -f /docker-compose.yaml pull",
-            "sudo docker compose -f /docker-compose.yaml up -d --remove-orphans",
+            "sudo aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml /home/ec2-user/app/docker-compose.yaml",
+            "sudo docker compose -p nginx -f /home/ec2-user/app/docker-compose.yaml pull",
+            "sudo docker compose -p nginx -f /home/ec2-user/app/docker-compose.yaml up -d --remove-orphans",
             "sudo docker image prune -f"]' \
             --region ${{ secrets.AWS_REGION }} \
             --comment "Deploying SSM"

@@ -1,3 +1,6 @@
+# 프로젝트 이름. 파일을 /docker-compose.yaml 에 두면 이름이 비어서 up 이 실패함
+name: nginx
+
 services:
   my-service-web:
     image: 925047940866.dkr.ecr.eu-central-1.amazonaws.com/std11/nginx:latest
